@@ -1,37 +1,84 @@
 #!/bin/bash
 
+# ###
+# Deploys updates to Pantheon multidev environments. Enforces workflow conventions and
+# automates various deploy tasks.
+#   - $DEVELOPMENT_BRANCH will be deployed to the develop environment.
+#       Runs updates and imports configuration via Quicksilver. This is the default branch.
+#   - $PRODUCTION_BRANCH will be deployed to dev environment. Live database and files are sync'd to
+#       dev environment. Runs updates and imports configuration via Quicksilver. This is the master branch.
+#   - Pull requests to any branch will be deployed to pr-# multidev environment.
+#   - PR-# multidevs are deleted when the merge request is closed/merged
+#   - Push back comments with a link to the target site and environment site on Pantheon
+#       are posted to each pull request.
+# ###
+
+# Exit if anything fails
 set -eo pipefail
 
-#
-# This script deploys the build artifact to Pantheon.
-# On the master branch the dev environment is used.
-# Otherwise a multidev environment is used.
-#
+# Cut gitignore at the cut mark.
+terminus build:gitignore:cut
 
 # Authenticate with Terminus
 terminus -n auth:login --machine-token="$TERMINUS_TOKEN"
 
-# Prepare for Pantheon
-composer run prepare-for-pantheon
+# Env to create multidevs from which environment
+CREATE_MDS_FROM="dev"
 
-if [[ $CI_BRANCH != $DEFAULT_BRANCH ]]
+# When deploying the develop branch, compare commit sha to the HEAD of the
+# production branch. Skip deploy when they match - the main branch deploy is
+# the one we want when a release is pushing updates to both.
+if [[ $CI_BRANCH = "$DEVELOPMENT_BRANCH" ]]
 then
-    # Create a new multidev environment (or push to an existing one)
-    terminus -n build:env:create "$SITE.dev" "$TERMINUS_ENV" --yes
-else
-    # Push to the dev environment
-    terminus -n build:env:push "$SITE.dev" --yes
+    TERMINUS_ENV="develop"
+    # Get production branch head sha
+    git fetch origin "$PRODUCTION_BRANCH"
+    PROD_HEAD_SHA=$(git rev-parse origin/"$PRODUCTION_BRANCH")
+    if [[ $CI_COMMIT_SHA = "$PROD_HEAD_SHA" ]]
+    then
+        echo "Skipping deploy of $CI_COMMIT_SHA on $DEVELOPMENT_BRANCH. Commit will be deployed via $PRODUCTION_BRANCH."
+        exit 0
+    fi
 fi
 
-# Run update-db to ensure that the cloned database is updated for the new code.
-terminus -n wp "$SITE.$TERMINUS_ENV" -- core update-db
+# Force dev environment for the master branch, develop for dev either primary branch
+if [[ $CI_BRANCH = "$PRODUCTION_BRANCH" ]]
+then
+    echo "Found branch $CI_BRANCH. TERMINUS_ENV set to dev."
+    TERMINUS_ENV="dev"
+# Non-master branch; check if a mulitdev exists
+else
+    set +e
+    TERMINUS_ENV_EXISTS=$(terminus env:list "$TERMINUS_SITE" --field=ID | grep -w $TERMINUS_ENV)
+    set -e
+    # Doesn't exist; create it
+    if [[ -z "$TERMINUS_ENV_EXISTS" ]]
+    then
+        echo "Site $TERMINUS_SITE does not have a $TERMINUS_ENV multidev. Creating."
+        terminus -n build:env:create "$TERMINUS_SITE.$CREATE_MDS_FROM" "$TERMINUS_ENV" --yes
+    fi
+fi
 
-# Clear the site environment's cache
-terminus -n env:clear-cache "$SITE.$TERMINUS_ENV"
+# Push to Pantheon
+echo "Pushing to TERMINUS_ENV $TERMINUS_ENV."
+terminus -n build:env:push "$TERMINUS_SITE.$TERMINUS_ENV" --yes
 
-# Ensure secrets are set
-terminus -n secrets:set "$SITE.$TERMINUS_ENV" token "$GITHUB_TOKEN" --file='github-secrets.json' --clear --skip-if-empty
+# Wake the environment to make sure the database is reachable.
+terminus -n env:wake "$TERMINUS_SITE.$TERMINUS_ENV"
 
-# Delete old multidev environments associated
-# with a PR that has been merged or closed.
-terminus -n build:env:delete:pr "$SITE" --yes
+
+# Update the WordPress database
+terminus -n wp "$TERMINUS_SITE.$TERMINUS_ENV" -- core update-db
+
+# # Clear the environment cache
+terminus -n env:clear-cache "$TERMINUS_SITE.$TERMINUS_ENV"
+
+# Comment with the URL for pull requests
+if [[ -n "$PR_NUMBER" ]]
+then
+    echo "Commenting on pull request."
+    terminus build:comment:add:pr --pr_id="$PR_NUMBER" --message="Deployment to https://${TERMINUS_ENV}-${TERMINUS_SITE}.pantheonsite.io successful."
+fi
+
+# Delete multidevs associated with closed or merged pull merge requests.
+terminus -n build:env:delete:pr "$TERMINUS_SITE" --yes
