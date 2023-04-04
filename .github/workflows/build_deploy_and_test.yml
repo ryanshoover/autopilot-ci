@@ -194,8 +194,7 @@ jobs:
     strategy:
       matrix: ${{ fromJson(needs.create_site_matrix.outputs.SITE_MATRIX) }}
     env:
-      DEFAULT_SITE: ${{ matrix.site }}
-      TERMINUS_SITE: ${{ matrix.site }}
+      SITE: ${{ matrix.site }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
