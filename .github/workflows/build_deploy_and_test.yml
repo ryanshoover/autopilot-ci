@@ -165,6 +165,7 @@ jobs:
           eval `ssh-agent -s`
           ssh-add ../private.key
           source $BASH_ENV
+          git config --global --add safe.directory /__w/autopilot-ci/autopilot-ci
           ./.ci/deploy/pantheon/dev-multidev
 
   static_tests:
