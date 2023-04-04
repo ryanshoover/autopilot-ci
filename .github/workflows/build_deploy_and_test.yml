@@ -116,7 +116,7 @@ jobs:
       image: quay.io/pantheon-public/build-tools-ci:8.x-php8.0
       options: --user root
     runs-on: ubuntu-latest
-    needs: create_site_matrix
+    needs: [create_site_matrix, configure_env_vars, static_tests]
     strategy:
       matrix: ${{ fromJson(needs.create_site_matrix.outputs.SITE_MATRIX) }}
     env:
