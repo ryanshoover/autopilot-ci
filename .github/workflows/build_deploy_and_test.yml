@@ -66,7 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           ref: ${{ github.head_ref || github.ref_name }}
 
@@ -74,7 +74,7 @@ jobs:
         run: echo BASH_ENV=${RUNNER_TEMP}/bash_env.txt >> $GITHUB_ENV
 
       - name: Cache bash_env.txt
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         env:
           cache-name: cache-bash-env
         with:
@@ -110,13 +110,104 @@ jobs:
           echo "export CI_REPOSITORY_URL='https://github.com/${GITHUB_REPOSITORY}'" >> $BASH_ENV
           echo "export ARTIFACTS_DIR_URL='${GITHUB_WORKFLOW_URL}/#artifacts'" >> $BASH_ENV
 
+  build_php:
+    container:
+      image: quay.io/pantheon-public/build-tools-ci:6.x
+      options: --user root
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Cache composer cache
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-composer-cache
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+
+      - name: Cache vendor folder
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-vendor
+        with:
+          path: ./vendor
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('composer.lock') }}
+
+      - name: Cache web folder
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-web
+        with:
+          path: ./web
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('composer.lock') }}
+
+      # Set TERMINUS_ENV and related environment variables.
+      # https://github.com/pantheon-systems/docker-build-tools-ci/blob/6.x/scripts/set-environment
+      - name: setup-environment-vars
+        run: /build-tools-ci/scripts/set-environment
+
+      - name: run PHP build step
+        run: ./.ci/build/php
+
+  static_tests:
+    name: Run linting, validation, and coding standards tests
+    needs: [build_php]
+    container:
+      image: quay.io/pantheon-public/build-tools-ci:8.x-php8.0
+      options: --user root
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Cache composer cache
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-composer-cache
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+
+      - name: Cache vendor folder
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-vendor
+        with:
+          path: ./vendor
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('composer.lock') }}
+
+      - name: Cache web folder
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-web
+        with:
+          path: ./web
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('composer.lock') }}
+
+      # Set TERMINUS_ENV and related environment variables.
+      # https://github.com/pantheon-systems/docker-build-tools-ci/blob/8.x/scripts/set-environment
+      - name: setup-environment-vars
+        run: /build-tools-ci/scripts/set-environment
+
   deploy_to_pantheon:
     name: Deploy to Pantheon environment
     container:
       image: quay.io/pantheon-public/build-tools-ci:8.x-php8.0
       options: --user root
     runs-on: ubuntu-latest
-    needs: [create_site_matrix, configure_env_vars, static_tests]
+    needs: [create_site_matrix, configure_env_vars, build_php, static_tests]
     strategy:
       matrix: ${{ fromJson(needs.create_site_matrix.outputs.SITE_MATRIX) }}
     env:
@@ -124,7 +215,7 @@ jobs:
       TERMINUS_SITE: ${{ matrix.site }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
@@ -134,7 +225,7 @@ jobs:
           echo BASH_ENV=${RUNNER_TEMP}/bash_env.txt >> $GITHUB_ENV
 
       - name: Cache bash_env.txt
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         env:
           cache-name: cache-bash-env
         with:
@@ -144,6 +235,22 @@ jobs:
             ${{ runner.os }}-build-${{ env.cache-name }}-
             ${{ runner.os }}-build-
             ${{ runner.os }}-
+
+      - name: Cache vendor folder
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-vendor
+        with:
+          path: ./vendor
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('composer.lock') }}
+
+      - name: Cache web folder
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-web
+        with:
+          path: ./web
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('composer.lock') }}
 
       # Set TERMINUS_ENV and related environment variables.
       # https://github.com/pantheon-systems/docker-build-tools-ci/blob/6.x/scripts/set-environment
@@ -167,73 +274,3 @@ jobs:
           source $BASH_ENV
           git config --global --add safe.directory /__w/autopilot-ci/autopilot-ci
           ./.ci/deploy/pantheon/dev-multidev
-
-  static_tests:
-    name: Run linting, validation, and coding standards tests
-    container:
-      image: quay.io/pantheon-public/build-tools-ci:8.x-php8.0
-      options: --user root
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-
-      - name: Cache composer cache
-        uses: actions/cache@v2
-        env:
-          cache-name: cache-composer-cache
-        with:
-          path: ~/.composer/cache
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/composer.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}-
-            ${{ runner.os }}-build-
-            ${{ runner.os }}-
-      # Set TERMINUS_ENV and related environment variables.
-      # https://github.com/pantheon-systems/docker-build-tools-ci/blob/8.x/scripts/set-environment
-      - name: setup-environment-vars
-        run: /build-tools-ci/scripts/set-environment
-
-      - name: Cache node modules
-        uses: actions/cache@v2
-        env:
-          cache-name: cache-node-modules
-        with:
-          # caching node_modules
-          path: web/themes/custom/XXX/node_modules # 👈 path for node_modules folder
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
-          # 👆 name of the chache key includes package-lock.json
-          restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}-
-            ${{ runner.os }}-build-
-            ${{ runner.os }}-
-      - name: Cache npm
-        uses: actions/cache@v2
-        env:
-          cache-name: npm-cache
-        with:
-          path: ~/.npm
-          key: npm-${{ hashFiles('package-lock.json') }}
-          restore-keys: npm-
-
-      - name: Install composer dependencies
-        run: |
-          composer --no-interaction --no-progress --prefer-dist --optimize-autoloader install
-      - name: Use Node.js 9.11.2
-        uses: actions/setup-node@v3
-        with:
-          node-version: 9.11.2
-
-      - name: Frontend build
-        run: |
-          git config --global --add safe.directory '*'
-          # cd web/themes/custom/XXX
-          # npm i -g gulp-cli
-          # npm i -g gulp
-          # npm install
-          # gulp build
-      - name: Run static tests
-        run: |
-          ./.ci/test/static/run
