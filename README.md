@@ -16,7 +16,9 @@ Codeception
 
 ### Local Development
 
-Lando
+- [Lando](https://docs.lando.dev/pantheon/)
+- [DDEV](https://ddev.com/)
+- [wp-env](https://developer.wordpress.org/block-editor/reference-guides/packages/packages-env/)
 
 ### Frontend Build
 
