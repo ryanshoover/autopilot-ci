@@ -12,7 +12,7 @@ $rootPath = realpath( __DIR__ . '/..' );
 /**
  * Include the Composer autoload
  */
-require_once( $rootPath . '/vendor/autoload.php' );
+require_once $rootPath . '/vendor/autoload.php';
 
 /*
  * Fetch .env
@@ -158,21 +158,15 @@ if ( isset( $_ENV['PANTHEON_ENVIRONMENT'] ) ):
 	}
 
 	// Force the use of a safe temp directory when in a container
-	if ( defined( 'PANTHEON_BINDING' ) ):
+	if ( defined( 'PANTHEON_BINDING' ) ) {
 		define( 'WP_TEMP_DIR', sprintf( '/srv/bindings/%s/tmp', PANTHEON_BINDING ) );
-	endif;
-
-	// FS writes aren't permitted in test or live, so we should let WordPress know to disable relevant UI
-	if ( in_array( $_ENV['PANTHEON_ENVIRONMENT'], array( 'test', 'live' ) ) && ! defined( 'DISALLOW_FILE_MODS' ) ) :
-		define( 'DISALLOW_FILE_MODS', true );
-	endif;
-
+	}
 endif;
 
 /*
 * Define wp-content directory outside of WordPress core directory
 */
-define( 'WP_CONTENT_DIR', dirname( __FILE__ ) . '/wp-content' );
+define( 'WP_CONTENT_DIR', __DIR__ . '/wp-content' );
 define( 'WP_CONTENT_URL', WP_HOME . '/wp-content' );
 
 /**

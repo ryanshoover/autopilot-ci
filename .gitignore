@@ -20,7 +20,6 @@ web/wp-content/mu-plugins/*
 !web/wp-content/mu-plugins/.gitkeep
 !web/wp-content/plugins/
 web/wp-content/plugins/*
-!web/wp-content/plugins/custom/
 !web/wp-content/plugins/.gitkeep
 !web/wp-content/themes
 web/wp-content/themes/*
@@ -35,6 +34,10 @@ web/private/scripts/quicksilver
 !web/private/config/
 !.circleci
 .bashrc
+
+# Custom plugins and themes
+!web/wp-content/plugins/custom-blocks
+!web/wp-content/themes/custom-theme
 
 # Add directories containing build assets below.
 # Keep all additions above the "cut" line.

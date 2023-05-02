@@ -1,0 +1,7 @@
+name: enterprise-wordpress-refarch
+recipe: pantheon
+config:
+  framework: wordpress
+  site: enterprise-wordpress-refarch
+  # Link to a canary site for the upstream
+  id: 7608c6a5-b970-456a-a0f0-1d9a5873f7ce

@@ -30,7 +30,6 @@ env:
   PRODUCTION_BRANCH: 'master'
   DEVELOPMENT_BRANCH: 'develop'
 
-
 jobs:
   create_site_matrix:
     name: Create Matrix of Sites
@@ -155,6 +154,39 @@ jobs:
       - name: run PHP build step
         run: ./.ci/build/php
 
+  build_js:
+    container:
+      image: quay.io/pantheon-public/build-tools-ci:6.x
+      options: --user root
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Cache node_modules folder
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-node-modules
+        with:
+          path: ./node_modules
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('package-json.lock') }}
+
+      - name: Cache web folder
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-web
+        with:
+          path: ./web
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('composer.lock') }}
+
+      # Set TERMINUS_ENV and related environment variables.
+      # https://github.com/pantheon-systems/docker-build-tools-ci/blob/6.x/scripts/set-environment
+      - name: setup-environment-vars
+        run: /build-tools-ci/scripts/set-environment
+
+      - name: run JS build step
+        run: ./.ci/build/js
+
   static_tests:
     name: Run linting, validation, and coding standards tests
     needs: [build_php]
@@ -200,6 +232,18 @@ jobs:
       # https://github.com/pantheon-systems/docker-build-tools-ci/blob/8.x/scripts/set-environment
       - name: setup-environment-vars
         run: /build-tools-ci/scripts/set-environment
+
+      - name: Lint php code for syntax errors
+        run: composer -n lint
+
+      - name: Check coding standards
+        run: composer -n code-sniff
+
+      - name: Build composer
+        run: composer -n build-assets
+
+      - name: Run Codeception tests
+        run: composer test
 
   deploy_to_pantheon:
     name: Deploy to Pantheon environment
@@ -272,5 +316,5 @@ jobs:
           eval `ssh-agent -s`
           ssh-add ../private.key
           source $BASH_ENV
-          git config --global --add safe.directory /__w/autopilot-ci/autopilot-ci
+          git config --global --add safe.directory /__w/enterprise-wordpress-refarch/enterprise-wordpress-refarch
           ./.ci/deploy/pantheon/dev-multidev
